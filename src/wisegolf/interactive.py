@@ -566,23 +566,21 @@ def setup() -> "Config":
     os.environ["WISEGOLF_HOST_SLUG"] = slug
     console.print()
 
-    # 3. Authenticate via REST
+    # 3. Authenticate via browser
     console.print("  [bold]Step 3:[/] Authenticating…")
-    token = rest_auth(slug, email, cfg=None, password=password)
-    if token:
-        console.print(f"  [green]✓ Logged in to {club_name}[/]")
-        _create_browser_state(slug, token)
-        os.environ["WISEGOLF_TOKEN"] = token
-    else:
-        console.print("  [yellow]REST auth failed — trying browser login…[/]")
-        try:
-            import asyncio as _aio
-            from .browser_auth import login_automated
+    try:
+        import asyncio as _aio
+        from .browser_auth import login_automated
+        with console.status("  Logging in (headless browser)…", spinner="dots"):
             _aio.run(login_automated(headless=True, club_name=club_name))
-            console.print(f"  [green]✓ Logged in via browser[/]")
-        except Exception as e:
-            console.print(f"  [yellow]Browser login also failed: {e}[/]")
-            console.print("  [yellow]Run [bold]wisegolf browser-login --show[/] to login manually.[/]")
+        console.print(f"  [green]✓ Logged in to {club_name}[/]")
+        from .config import _load_token
+        token = _load_token()
+        if token:
+            os.environ["WISEGOLF_TOKEN"] = token
+    except Exception as e:
+        console.print(f"  [yellow]Auto-login failed: {e}[/]")
+        console.print("  [yellow]Run [bold]wisegolf browser-login --show[/] to login manually.[/]")
 
     # 4. Pick course
     console.print()
