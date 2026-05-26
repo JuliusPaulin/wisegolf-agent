@@ -393,7 +393,14 @@ def _do_club(cfg):
         return None
 
     search = _ask("Search (blank = show all)", "").lower()
-    filtered = [c for c in clubs if search in c.get("name", "").lower() or search in c.get("city", "").lower()] if search else clubs
+    if search:
+        words = search.split()
+        filtered = [c for c in clubs if all(
+            w in c.get("name", "").lower() or w in c.get("city", "").lower()
+            for w in words
+        )]
+    else:
+        filtered = clubs
 
     if not filtered:
         console.print("  [yellow]No matches.[/]")
@@ -519,7 +526,14 @@ def setup() -> "Config":
         raise SystemExit(1)
 
     search = _ask("Search club name", "").lower()
-    filtered = [c for c in clubs if search in c.get("name", "").lower() or search in c.get("city", "").lower()] if search else clubs
+    if search:
+        words = search.split()
+        filtered = [c for c in clubs if all(
+            w in c.get("name", "").lower() or w in c.get("city", "").lower()
+            for w in words
+        )]
+    else:
+        filtered = clubs
     if not filtered:
         console.print("  [yellow]No matches. Showing all.[/]")
         filtered = clubs
@@ -558,6 +572,7 @@ def setup() -> "Config":
     if token:
         console.print(f"  [green]✓ Logged in to {club_name}[/]")
         _create_browser_state(slug, token)
+        os.environ["WISEGOLF_TOKEN"] = token
     else:
         console.print("  [yellow]REST auth failed — trying browser login…[/]")
         try:

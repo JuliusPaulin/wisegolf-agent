@@ -18,7 +18,7 @@ from .config import load as load_config
 
 log = logging.getLogger(__name__)
 
-STATE_PATH = Path("browser_state.json")
+STATE_PATH = Path(__file__).resolve().parents[2] / "browser_state.json"
 
 
 async def _has_token(page) -> bool:

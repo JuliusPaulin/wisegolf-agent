@@ -349,7 +349,14 @@ def select_club():
         raise typer.Exit(1)
 
     search = typer.prompt("Search club name (blank = show all)", default="").lower()
-    filtered = [c for c in clubs if search in c.get("name", "").lower() or search in c.get("city", "").lower()] if search else clubs
+    if search:
+        words = search.split()
+        filtered = [c for c in clubs if all(
+            w in c.get("name", "").lower() or w in c.get("city", "").lower()
+            for w in words
+        )]
+    else:
+        filtered = clubs
 
     if not filtered:
         console.print("[yellow]No matches.[/]")

@@ -17,8 +17,7 @@ _USER_AGENTS = [
 
 
 def _browser_headers(token: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {token}",
+    headers: dict[str, str] = {
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "fi-FI,fi;q=0.9,en-US;q=0.8,en;q=0.7",
         "Accept-Encoding": "gzip, deflate, br",
@@ -32,6 +31,9 @@ def _browser_headers(token: str) -> dict[str, str]:
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "cross-site",
     }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def make_client(cfg: Config) -> httpx.Client:
