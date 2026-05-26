@@ -9,15 +9,20 @@ pip install git+https://github.com/juliuspaulin/wisegolf-agent.git
 playwright install chromium
 ```
 
-## Setup
+## First-time setup
 
 ```bash
-cp .env.example .env
-# Edit .env — set WISEGOLF_USERNAME and WISEGOLF_PASSWORD
-wisegolf browser-login   # saves browser session (one-time)
-wisegolf players          # find your personId
-# Edit .env — set WISEGOLF_PERSON_IDS
+wisegolf setup
 ```
+
+The setup wizard walks you through:
+1. Enter your WiseGolf email and password
+2. Pick your club from the full list
+3. Authenticate (REST — no browser needed)
+4. Pick your course
+5. Confirm player IDs
+
+Everything is saved to `.env`. You can also just run `wisegolf` — it detects first launch and runs setup automatically.
 
 ## Usage
 

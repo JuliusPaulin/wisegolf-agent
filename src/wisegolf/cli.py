@@ -410,6 +410,13 @@ def select_club():
     console.print("[yellow]Course ID cleared — run wisegolf select course next.[/]")
 
 
+@app.command("setup")
+def setup_cmd():
+    """Interactive first-time setup: credentials, club, course, player IDs."""
+    from .interactive import setup
+    setup()
+
+
 @app.command("stop")
 def stop():
     """Kill all running wisegolf snipe and scout date processes."""
@@ -472,6 +479,7 @@ def help_cmd():
         ("wisegolf queue run <id>", "Run a queued target right now (for testing)"),
         ("wisegolf queue daemon", "Run background daemon (picks up due targets)"),
         ("", ""),
+        ("wisegolf setup", "Interactive first-time setup"),
         ("wisegolf stop", "Kill all running snipe/scout processes"),
         ("wisegolf help", "Show this help"),
     ]

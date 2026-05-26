@@ -16,7 +16,7 @@ from rich.table import Table
 
 console = Console()
 
-_COMMANDS = ["snipe", "scout", "slots", "bookings", "course", "club", "login", "help", "quit", "exit"]
+_COMMANDS = ["snipe", "scout", "slots", "bookings", "course", "club", "login", "setup", "help", "quit", "exit"]
 
 _HELP = (
     "  [bold cyan]snipe[/]      Book a tee time, retry every 10s\n"
@@ -26,6 +26,7 @@ _HELP = (
     "  [bold cyan]course[/]     Change active course\n"
     "  [bold cyan]club[/]       Change active club\n"
     "  [bold cyan]login[/]      Re-login / switch club in browser\n"
+    "  [bold cyan]setup[/]      Re-run first-time setup\n"
     "  [bold cyan]help[/]       Show this help\n"
     "  [bold cyan]quit[/]       Exit"
 )
@@ -307,8 +308,15 @@ def _get_wisegolf_email(cfg) -> str:
     return cfg.username
 
 
-def rest_auth(slug: str, username: str, password: str) -> str | None:
-    """Authenticate via REST API. Returns token or None."""
+def rest_auth(slug: str, username: str, password: str | None = None, cfg=None) -> str | None:
+    """Authenticate via REST API. Returns token or None.
+
+    Pass password directly, or pass cfg to read from cfg.password.
+    """
+    if password is None and cfg is not None:
+        password = cfg.password
+    if not password:
+        return None
     try:
         r = httpx.post(
             f"https://api.{slug}.fi/api/1.0/auth",
@@ -327,6 +335,8 @@ def _update_browser_state(slug: str, token: str | None = None) -> None:
     """Update selectedHost (and optionally access_token) in browser_state.json."""
     state_path = Path(__file__).resolve().parents[2] / "browser_state.json"
     if not state_path.exists():
+        if token:
+            _create_browser_state(slug, token)
         return
     state = json.loads(state_path.read_text())
     for origin in state.get("origins", []):
@@ -338,6 +348,24 @@ def _update_browser_state(slug: str, token: str | None = None) -> None:
                 item["value"] = f'"{slug}"'
             elif token and "access_token" in name:
                 item["value"] = token
+    state_path.write_text(json.dumps(state, indent=2))
+
+
+def _create_browser_state(slug: str, token: str) -> None:
+    """Build browser_state.json from scratch — no browser needed."""
+    state_path = Path(__file__).resolve().parents[2] / "browser_state.json"
+    state = {
+        "cookies": [],
+        "origins": [{
+            "origin": "https://app.wisegolf.fi",
+            "localStorage": [
+                {"name": "CapacitorStorage.access_token-affbfa03", "value": token},
+                {"name": "CapacitorStorage.selectedHost-affbfa03", "value": slug},
+                {"name": "CapacitorStorage.selectedGolfClub-affbfa03", "value": f'"{slug}"'},
+                {"name": "CapacitorStorage.screenMode-affbfa03", "value": "dark"},
+            ],
+        }],
+    }
     state_path.write_text(json.dumps(state, indent=2))
 
 
@@ -436,6 +464,188 @@ def _do_club(cfg):
     return load_config()
 
 
+# ── setup (first launch) ─────────────────────────────────────────────────────
+
+_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+_ENV_EXAMPLE = Path(__file__).resolve().parents[2] / ".env.example"
+
+
+def setup() -> "Config":
+    """Interactive first-time setup. Creates .env, authenticates, picks course."""
+    from dotenv import set_key
+
+    console.print()
+    console.print(Panel(
+        "[bold green]WiseGolf Agent — First-time setup[/]",
+        border_style="green", expand=False, padding=(0, 2),
+    ))
+    console.print()
+
+    # Create .env from example if needed
+    if not _ENV_PATH.exists():
+        if _ENV_EXAMPLE.exists():
+            _ENV_PATH.write_text(_ENV_EXAMPLE.read_text())
+        else:
+            _ENV_PATH.write_text("")
+
+    # 1. Credentials
+    console.print("  [bold]Step 1:[/] WiseGolf credentials")
+    email = _ask("Email", "")
+    if not email:
+        console.print("  [red]Email required.[/]")
+        raise SystemExit(1)
+    import getpass
+    try:
+        password = getpass.getpass("  Password:  ")
+    except EOFError:
+        password = _ask("Password", "")
+    if not password:
+        console.print("  [red]Password required.[/]")
+        raise SystemExit(1)
+
+    set_key(str(_ENV_PATH), "WISEGOLF_USERNAME", email)
+    set_key(str(_ENV_PATH), "WISEGOLF_PASSWORD", password)
+    os.environ["WISEGOLF_USERNAME"] = email
+    os.environ["WISEGOLF_PASSWORD"] = password
+    console.print("  [green]Saved credentials to .env[/]")
+    console.print()
+
+    # 2. Pick club
+    console.print("  [bold]Step 2:[/] Select your club")
+    console.print("  Fetching WiseGolf clubs…")
+    clubs = _fetch_clubs_unauthenticated()
+    if not clubs:
+        console.print("  [red]Could not fetch club list. Set WISEGOLF_HOST_SLUG in .env manually.[/]")
+        raise SystemExit(1)
+
+    search = _ask("Search club name", "").lower()
+    filtered = [c for c in clubs if search in c.get("name", "").lower() or search in c.get("city", "").lower()] if search else clubs
+    if not filtered:
+        console.print("  [yellow]No matches. Showing all.[/]")
+        filtered = clubs
+
+    t = Table("№", "Name", "City", box=box.SIMPLE_HEAD)
+    for i, club in enumerate(filtered, 1):
+        t.add_row(str(i), club.get("name", "?"), club.get("city", "?"))
+    console.print(t)
+
+    choice = _ask_int(f"Pick (1–{len(filtered)})", 1)
+    if not 1 <= choice <= len(filtered):
+        console.print("  [red]Invalid.[/]")
+        raise SystemExit(1)
+
+    picked = filtered[choice - 1]
+    club_name = picked.get("name", "?")
+    slug = slug_from_club(picked)
+    if not slug:
+        slug = _ask(f"Enter club slug for '{club_name}' (e.g. 'espoogolf')", "")
+    if not slug:
+        raise SystemExit(1)
+
+    console.print(f"  Verifying api.{slug}.fi… ", end="")
+    if not verify_slug(slug):
+        console.print("[red]✗[/]")
+        raise SystemExit(1)
+    console.print("[green]✓[/]")
+
+    set_key(str(_ENV_PATH), "WISEGOLF_HOST_SLUG", slug)
+    os.environ["WISEGOLF_HOST_SLUG"] = slug
+    console.print()
+
+    # 3. Authenticate via REST
+    console.print("  [bold]Step 3:[/] Authenticating…")
+    token = rest_auth(slug, email, cfg=None, password=password)
+    if token:
+        console.print(f"  [green]✓ Logged in to {club_name}[/]")
+        _create_browser_state(slug, token)
+    else:
+        console.print("  [yellow]REST auth failed — trying browser login…[/]")
+        try:
+            import asyncio as _aio
+            from .browser_auth import login_automated
+            _aio.run(login_automated(headless=True, club_name=club_name))
+            console.print(f"  [green]✓ Logged in via browser[/]")
+        except Exception as e:
+            console.print(f"  [yellow]Browser login also failed: {e}[/]")
+            console.print("  [yellow]Run [bold]wisegolf browser-login --show[/] to login manually.[/]")
+
+    # 4. Pick course
+    console.print()
+    console.print("  [bold]Step 4:[/] Select course")
+    from .config import load as load_config
+    cfg = load_config()
+    try:
+        from .client import WiseGolfClient
+        with WiseGolfClient(cfg) as c:
+            courses = c.list_courses()
+    except Exception:
+        courses = []
+
+    if courses:
+        t2 = Table("№", "ID", "Name", box=box.SIMPLE_HEAD)
+        for i, course in enumerate(courses, 1):
+            t2.add_row(str(i), str(course.get("productId", "?")), course.get("name", "?").strip("."))
+        console.print(t2)
+        cc = _ask_int(f"Pick (1–{len(courses)})", 1)
+        if 1 <= cc <= len(courses):
+            cid = courses[cc - 1].get("productId")
+            set_key(str(_ENV_PATH), "WISEGOLF_COURSE_ID", str(cid))
+            os.environ["WISEGOLF_COURSE_ID"] = str(cid)
+            console.print(f"  [green]Saved WISEGOLF_COURSE_ID={cid}[/]")
+    else:
+        console.print("  [yellow]Could not fetch courses. Set WISEGOLF_COURSE_ID in .env manually.[/]")
+
+    # 5. Person IDs
+    console.print()
+    console.print("  [bold]Step 5:[/] Player IDs")
+    cfg = load_config()
+    try:
+        from .client import WiseGolfClient
+        with WiseGolfClient(cfg) as c:
+            players = c.players()
+        if players:
+            t3 = Table("personId", "Name", "Club", box=box.SIMPLE_HEAD)
+            for p in players:
+                t3.add_row(
+                    str(p.person_id),
+                    f"{p.first_name or ''} {p.family_name or ''}".strip(),
+                    str(p.club_id or ""),
+                )
+            console.print(t3)
+            default_pids = ",".join(str(p.person_id) for p in players)
+            pids = _ask("Person IDs (comma-separated)", default_pids)
+            set_key(str(_ENV_PATH), "WISEGOLF_PERSON_IDS", pids)
+            os.environ["WISEGOLF_PERSON_IDS"] = pids
+            console.print(f"  [green]Saved WISEGOLF_PERSON_IDS={pids}[/]")
+        else:
+            console.print("  [yellow]No players found. Set WISEGOLF_PERSON_IDS in .env manually.[/]")
+    except Exception:
+        console.print("  [yellow]Could not fetch players. Set WISEGOLF_PERSON_IDS in .env after login.[/]")
+
+    console.print()
+    console.print(Panel(
+        "[bold green]Setup complete![/] Run [bold]wisegolf[/] to start.",
+        border_style="green", expand=False, padding=(0, 2),
+    ))
+    console.print()
+
+    return load_config()
+
+
+def _fetch_clubs_unauthenticated() -> list[dict]:
+    """Fetch club list without needing auth (uses espoogolf as default API host)."""
+    try:
+        r = httpx.get(
+            "https://api.espoogolf.fi/api/1.0/golf/club/",
+            headers={"Accept": "application/json"},
+            timeout=10,
+        )
+        j = r.json()
+        return [c for c in j.get("rows", []) if c.get("softwareVendorName") == "WiseNetwork"]
+    except Exception:
+        return []
+
+
 # ── welcome ───────────────────────────────────────────────────────────────────
 
 def _welcome(cfg) -> None:
@@ -468,7 +678,12 @@ def _welcome(cfg) -> None:
 
 def run() -> None:
     from .config import load as load_config
-    cfg = load_config()
+
+    if not _ENV_PATH.exists() or not os.getenv("WISEGOLF_USERNAME"):
+        cfg = setup()
+    else:
+        cfg = load_config()
+
     _welcome(cfg)
 
     try:
@@ -523,6 +738,8 @@ def run() -> None:
                 cfg = new_cfg
         elif cmd == "login":
             _do_login()
+        elif cmd == "setup":
+            cfg = setup()
         elif cmd == "help":
             console.print()
             console.print(_HELP)
