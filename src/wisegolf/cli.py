@@ -428,13 +428,24 @@ def setup_cmd():
 def stop():
     """Kill all running wisegolf snipe and scout date processes."""
     import signal
+    import sys
     my_pid = os.getpid()
 
-    result = subprocess.run(
-        ["pgrep", "-Ef", "wisegolf.*(snipe|scout)"],
-        capture_output=True, text=True,
-    )
-    pids = [int(p) for p in result.stdout.split() if p and int(p) != my_pid]
+    if sys.platform == "win32":
+        result = subprocess.run(
+            ["powershell", "-Command",
+             "Get-CimInstance Win32_Process | Where-Object {"
+             "$_.CommandLine -match 'wisegolf' -and "
+             "($_.CommandLine -match 'snipe' -or $_.CommandLine -match 'scout')"
+             "} | Select-Object -ExpandProperty ProcessId"],
+            capture_output=True, text=True,
+        )
+    else:
+        result = subprocess.run(
+            ["pgrep", "-Ef", "wisegolf.*(snipe|scout)"],
+            capture_output=True, text=True,
+        )
+    pids = [int(p) for p in result.stdout.split() if p.strip().isdigit() and int(p) != my_pid]
 
     if not pids:
         console.print("No running wisegolf snipe/scout processes found.")

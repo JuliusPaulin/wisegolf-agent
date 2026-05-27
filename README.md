@@ -4,10 +4,23 @@ Tee-time sniper and scout for WiseGolf clubs. Books tee times via the SPA using 
 
 ## Install
 
+### macOS / Linux
+
 ```bash
 pip install git+https://github.com/juliuspaulin/wisegolf-agent.git
 playwright install chromium
 ```
+
+### Windows
+
+Requires Python 3.11+ ([python.org](https://www.python.org/downloads/) — check "Add to PATH" during install).
+
+```powershell
+pip install git+https://github.com/juliuspaulin/wisegolf-agent.git
+playwright install chromium
+```
+
+If `pip` isn't recognized, try `py -m pip` instead. If `wisegolf` isn't found after install, use `py -m wisegolf` or add Python's Scripts folder to your PATH.
 
 ## First-time setup
 
@@ -78,3 +91,4 @@ The REST API only shows rows for already-booked players — fully empty slots ar
 
 - Python 3.11+
 - Chromium (installed via `playwright install chromium`)
+- Works on macOS, Linux, and Windows

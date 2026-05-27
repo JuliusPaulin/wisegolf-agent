@@ -9,10 +9,13 @@ import time
 from datetime import date, datetime, timedelta
 
 import httpx
+from rich.console import Console
 
 from .client import WiseGolfClient, WiseGolfError
 from .config import Config
 from .models import TeeSlot
+
+_console = Console()
 
 log = logging.getLogger(__name__)
 
@@ -112,7 +115,7 @@ def ask_to_book(slot: TeeSlot, open_count: int, target: date, timeout_s: int = 1
     """
     msg = f"{_fmt_date(target)} @ {slot.hhmm} — {open_count} spot{'s' if open_count != 1 else ''} open"
     title = "WiseGolf Scout"
-    print(f"\n\033[1;32m⛳  SLOT FOUND: {msg}\033[0m")
+    _console.print(f"\n[bold green]⛳  SLOT FOUND: {msg}[/]")
 
     topic = os.getenv("WISEGOLF_NTFY_TOPIC", "")
     if topic:
@@ -157,9 +160,9 @@ def _book_now(cfg: Config, slot: TeeSlot, target: date, person_ids: list[int]) -
     ))
     ok = result.get("ok", False)
     if ok:
-        print(f"\033[1;32m✓ Booked {_fmt_date(target)} @ {result.get('time')}\033[0m")
+        _console.print(f"[bold green]✓ Booked {_fmt_date(target)} @ {result.get('time')}[/]")
     else:
-        print(f"\033[1;31m✗ Booking failed: {result.get('reason')}\033[0m")
+        _console.print(f"[bold red]✗ Booking failed: {result.get('reason')}[/]")
     return ok
 
 
